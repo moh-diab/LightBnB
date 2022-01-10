@@ -17,7 +17,7 @@ const pool = new Pool({
  * @param {String} email The email of the user.
  * @return {Promise<{}>} A promise to the user.
  */
- const getUserWithEmail = function(email) {
+const getUserWithEmail = function (email) {
   const queryString = `SELECT * FROM users WHERE email = $1;`;
   const values = [email];
   return pool.query(queryString, values)
@@ -33,7 +33,7 @@ exports.getUserWithEmail = getUserWithEmail;
  * @param {string} id The id of the user.
  * @return {Promise<{}>} A promise to the user.
  */
- const getUserWithId = function(id) {
+const getUserWithId = function (id) {
   const queryString = `SELECT * FROM users WHERE id = $1;`;
   const values = [id];
   return pool.query(queryString, values)
@@ -50,7 +50,7 @@ exports.getUserWithId = getUserWithId;
  * @param {{name: string, password: string, email: string}} user
  * @return {Promise<{}>} A promise to the user.
  */
- const addUser =  function(user) {
+const addUser = function (user) {
   const queryString = `
   INSERT INTO users (name, email, password)
   VALUES ($1, $2, $3)
@@ -71,7 +71,7 @@ exports.addUser = addUser;
  * @param {string} guest_id The id of the user.
  * @return {Promise<[{}]>} A promise to the reservations.
  */
- const getAllReservations = function(guest_id, limit = 10) {
+const getAllReservations = function (guest_id, limit = 10) {
   const queryString = `
   SELECT reservations.*, properties.*, AVG(property_reviews.rating) as average_rating
   FROM reservations
@@ -101,17 +101,77 @@ exports.getAllReservations = getAllReservations;
  */
 
 
- const getAllProperties = function(options, limit = 10) {
-  const queryString = `SELECT * FROM properties LIMIT $1;`;
-  const values = [limit];
-  return pool
-    .query(queryString, values)
-    .then((result) => result.rows)
-    .catch((err) => {
-      console.log(err.message);
-    });
-};
+const getAllProperties = function (options, limit = 10) {
+  //1 - constants
+  const queryParams = [];
+  const base = 10;
 
+  //2 - variables
+  let counter = 0;
+  let queryString = `
+  SELECT properties.*,
+    AVG(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON property_reviews.property_id = properties.id
+  `;
+  //3 - all if statements based on search criteria
+  if (options.city) {
+    counter++;
+    queryParams.push(`%${options.city}%`);
+    queryString += `WHERE city ILIKE $${queryParams.length} 
+    `;
+  }
+
+  if (options.owner_id) {
+    counter++;
+    queryParams.push(options.owner_id);
+    if (counter === 2) {
+      queryString += `AND owner_id = $${queryParams.length} 
+      `;
+    } else if (counter === 1) {
+      queryString += `WHERE owner_id = $${queryParams.length} 
+      `;
+    }
+  }
+
+  if (options.minimum_price_per_night && options.maximum_price_per_night) {
+    counter += 2;
+    console.log("string ?", Number.isInteger(options.maximum_price_per_night));
+    const min = parseInt(options.minimum_price_per_night, base);
+    const max = parseInt(options.maximum_price_per_night, base);
+    queryParams.push(min);
+    queryString += `AND cost_per_night >= $${queryParams.length} 
+    `;
+    queryParams.push(max);
+    queryString += `AND cost_per_night <= $${queryParams.length} 
+    `;
+  }
+
+  queryString += `GROUP BY properties.id
+  `;
+
+  if (options.minimum_rating) {
+    counter++;
+    queryParams.push(options.minimum_rating);
+    queryString += `HAVING AVG(property_reviews.rating) >= $${queryParams.length} 
+    `;
+  }
+
+  //4 - final query statements
+  queryParams.push(limit);
+  queryString += `ORDER BY cost_per_night
+  LIMIT $${queryParams.length};
+  `;
+
+  //5 - backend object verification
+  console.log(queryString, queryParams);
+
+  //6 - frontend result
+  return pool
+    .query(queryString, queryParams)
+    .then((res) => res.rows)
+    .catch((err) => console.error("query error", err.stack));
+};
 exports.getAllProperties = getAllProperties;
 
 
@@ -120,7 +180,7 @@ exports.getAllProperties = getAllProperties;
  * @param {{}} property An object containing all of the property details.
  * @return {Promise<{}>} A promise to the property.
  */
-const addProperty = function(property) {
+const addProperty = function (property) {
   const propertyId = Object.keys(properties).length + 1;
   property.id = propertyId;
   properties[propertyId] = property;
